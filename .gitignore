@@ -1,0 +1,32 @@
+# Sensitive info
+.env
+
+# Local Databases & Output Artifacts
+*.db
+jobs.db
+dashboard.html
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# IDEs
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# OS files
+.DS_Store
+Thumbs.db

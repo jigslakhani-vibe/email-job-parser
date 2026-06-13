@@ -1,0 +1,20 @@
+{
+  "target_roles": [
+    "Director of Product Management",
+    "Director of Product",
+    "Director Product Management",
+    "Group Product Manager",
+    "Group PM",
+    "Principal Product Manager",
+    "Principal PM"
+  ],
+  "target_locations": [
+    "Bengaluru",
+    "Bangalore",
+    "India (Remote)",
+    "Remote"
+  ],
+  "min_experience_years": 10,
+  "required_experience": "10+ years of product management experience, preferably in leadership or principal roles",
+  "min_relevance_score": 6
+}
