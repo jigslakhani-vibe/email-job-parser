@@ -131,8 +131,8 @@ def run_dry_run():
     print(f"Cleaned Body Preview:\\n{clean_email_html(mock_email['body'])[:200]}...")
     
     # 2. Evaluate
-    print("[INFO] Evaluating job using Gemini API...")
-    if not evaluator.api_key:
+    print(f"[INFO] Evaluating job using {evaluator.provider.capitalize()} API...")
+    if evaluator.provider == "gemini" and not evaluator.api_key:
         print("[WARNING] No GEMINI_API_KEY found. Generating a mock evaluation for visualization.")
         evaluation = {
             "job_title": "Director of Product Management",
@@ -146,7 +146,7 @@ def run_dry_run():
             "salary": "₹6,500,000 - ₹9,000,000 INR"
         }
     else:
-        # Call Gemini
+        # Call Gemini or Ollama
         cleaned_body = clean_email_html(mock_email["body"])
         evaluation = evaluator.evaluate_email(
             email_subject=mock_email["subject"],
@@ -182,8 +182,8 @@ def run_fetch_pipeline():
     db = JobDB()
     evaluator = JobEvaluator()
     
-    # Verify API key
-    if not evaluator.api_key:
+    # Verify API key if provider is Gemini
+    if evaluator.provider == "gemini" and not evaluator.api_key:
         print("[ERROR] GEMINI_API_KEY is not set. Cannot run job evaluation.")
         print("[ERROR] Please add your GEMINI_API_KEY in the .env file.")
         sys.exit(1)
@@ -226,7 +226,7 @@ def run_fetch_pipeline():
         if len(cleaned_body) > 12000:
             cleaned_body = cleaned_body[:12000] + "...\\n[Text Truncated]"
 
-        print(f" -> Sending description to Gemini for evaluation...")
+        print(f" -> Sending description to {evaluator.provider.capitalize()} for evaluation...")
         evaluation = evaluator.evaluate_email(
             email_subject=mail["subject"],
             email_sender=mail["sender"],

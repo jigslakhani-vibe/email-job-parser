@@ -2,6 +2,8 @@ import google.generativeai as genai
 import os
 import json
 import typing
+import urllib.request
+import urllib.error
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -20,12 +22,17 @@ class JobEvaluation(typing.TypedDict):
 
 class JobEvaluator:
     def __init__(self, config_path="config.json"):
+        self.provider = os.getenv("LLM_PROVIDER", "gemini").lower()
         self.api_key = os.getenv("GEMINI_API_KEY")
-        if self.api_key:
-            genai.configure(api_key=self.api_key)
-        else:
-            print("WARNING: GEMINI_API_KEY not set in environment. Gemini evaluation will not work.")
-            
+        
+        if self.provider == "gemini":
+            if self.api_key:
+                genai.configure(api_key=self.api_key)
+            else:
+                print("WARNING: GEMINI_API_KEY not set in environment. Gemini evaluation will not work.")
+        
+        self.ollama_model = os.getenv("OLLAMA_MODEL", "gemma4:latest")
+        self.ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434").rstrip('/')
         self.config = self._load_config(config_path)
 
     def _load_config(self, config_path):
@@ -42,14 +49,97 @@ class JobEvaluator:
 
     def evaluate_email(self, email_subject, email_sender, email_body):
         """
-        Sends the email content to Gemini for job evaluation.
+        Sends the email content to the selected provider (Gemini or Ollama) for job evaluation.
         """
+        if self.provider == "gemini":
+            return self._evaluate_with_gemini(email_subject, email_sender, email_body)
+        elif self.provider == "ollama":
+            return self._evaluate_with_ollama(email_subject, email_sender, email_body)
+        else:
+            raise ValueError(f"Unknown LLM provider: {self.provider}")
+
+    def _evaluate_with_gemini(self, email_subject, email_sender, email_body):
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY is not set. Please set it in your .env file.")
 
         model = genai.GenerativeModel("gemini-2.5-flash")
+        prompt = self._build_prompt(email_subject, email_sender, email_body)
         
-        prompt = f"""
+        try:
+            response = model.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    response_mime_type="application/json",
+                    response_schema=JobEvaluation,
+                    temperature=0.1,  # Low temperature for factual parsing
+                )
+            )
+            
+            result = json.loads(response.text)
+            return result
+            
+        except Exception as e:
+            print(f"Error calling Gemini API: {e}")
+            return self._get_fallback_evaluation(str(e))
+
+    def _evaluate_with_ollama(self, email_subject, email_sender, email_body):
+        prompt = self._build_prompt(email_subject, email_sender, email_body)
+        
+        # System instructions to enforce JSON output format
+        system_instructions = (
+            "You are a structured parser. You MUST respond ONLY with a valid JSON object matching the requested schema. "
+            "Do not include any markdown formatting, backticks (like ```json), or explanation text before or after the JSON.\n"
+            "SCHEMA:\n"
+            "{\n"
+            "  \"job_title\": string,\n"
+            "  \"company\": string,\n"
+            "  \"location\": string,\n"
+            "  \"job_type\": string (Remote, Hybrid, Onsite, or Unknown),\n"
+            "  \"experience_required\": string,\n"
+            "  \"relevance_score\": integer (0 to 10),\n"
+            "  \"explanation\": string,\n"
+            "  \"skills\": array of strings,\n"
+            "  \"salary\": string\n"
+            "}"
+        )
+        
+        url = f"{self.ollama_url}/api/chat"
+        payload = {
+            "model": self.ollama_model,
+            "messages": [
+                {"role": "system", "content": system_instructions},
+                {"role": "user", "content": prompt}
+            ],
+            "format": "json",
+            "stream": False,
+            "options": {
+                "temperature": 0.1
+            }
+        }
+        
+        headers = {
+            "Content-Type": "application/json"
+        }
+        
+        try:
+            data = json.dumps(payload).encode("utf-8")
+            req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+            
+            with urllib.request.urlopen(req, timeout=60) as response:
+                resp_data = response.read().decode("utf-8")
+                resp_json = json.loads(resp_data)
+                
+                content = resp_json.get("message", {}).get("content", "").strip()
+                result = json.loads(content)
+                
+                return self._sanitize_evaluation_result(result)
+                
+        except Exception as e:
+            print(f"Error calling Ollama API: {e}")
+            return self._get_fallback_evaluation(str(e))
+
+    def _build_prompt(self, email_subject, email_sender, email_body):
+        return f"""
 You are an expert technical recruitment advisor. Analyze the following email content and evaluate the job opportunity against the user's target profile.
 
 USER PROFILE PREFERENCES:
@@ -79,31 +169,35 @@ INSTRUCTIONS:
 4. Extract the job details exactly as requested by the JSON schema.
 """
 
+    def _sanitize_evaluation_result(self, result):
+        # Handle case where relevance_score is parsed as string or missing
         try:
-            response = model.generate_content(
-                prompt,
-                generation_config=genai.types.GenerationConfig(
-                    response_mime_type="application/json",
-                    response_schema=JobEvaluation,
-                    temperature=0.1,  # Low temperature for factual parsing
-                )
-            )
+            score = int(result.get("relevance_score", 0))
+        except ValueError:
+            score = 0
             
-            # Parse response
-            result = json.loads(response.text)
-            return result
-            
-        except Exception as e:
-            print(f"Error calling Gemini API: {e}")
-            # Return a fallback evaluation
-            return {
-                "job_title": "Failed to evaluate",
-                "company": "Unknown",
-                "location": "Unknown",
-                "job_type": "Unknown",
-                "experience_required": "Unknown",
-                "relevance_score": 0,
-                "explanation": f"Error: {str(e)}",
-                "skills": [],
-                "salary": "Unknown"
-            }
+        sanitized = {
+            "job_title": str(result.get("job_title", "Unknown")),
+            "company": str(result.get("company", "Unknown")),
+            "location": str(result.get("location", "Unknown")),
+            "job_type": str(result.get("job_type", "Unknown")),
+            "experience_required": str(result.get("experience_required", "Unknown")),
+            "relevance_score": score,
+            "explanation": str(result.get("explanation", "")),
+            "skills": list(result.get("skills", [])),
+            "salary": str(result.get("salary", "Unknown"))
+        }
+        return sanitized
+
+    def _get_fallback_evaluation(self, error_msg):
+        return {
+            "job_title": "Failed to evaluate",
+            "company": "Unknown",
+            "location": "Unknown",
+            "job_type": "Unknown",
+            "experience_required": "Unknown",
+            "relevance_score": 0,
+            "explanation": f"Error: {error_msg}",
+            "skills": [],
+            "salary": "Unknown"
+        }

@@ -7,7 +7,9 @@ Job Radar AI is an intelligent pipeline that connects to your Gmail inbox, retri
 ## Features
 
 - **Gmail IMAP Fetching**: Securely logs in and uses `X-GM-RAW` syntax to search unread job notification emails (from LinkedIn, Indeed, etc.).
-- **Gemini AI Evaluation**: Uses `gemini-2.5-flash` with a strict `TypedDict` JSON schema to parse, score (0-10), and extract structured details (role, company, requirements, salary, and skills) from emails.
+- **LLM Job Evaluation**: Supports two providers:
+  - **Google Gemini**: Uses `gemini-2.5-flash` with a structured `TypedDict` response schema.
+  - **Ollama (Local)**: Runs completely offline using local models like `gemma4:latest` with JSON format enforcement.
 - **SQLite Database Tracking**: Stores evaluated jobs and records processed emails to avoid duplicate parsing.
 - **Interactive Dashboard**: Serves a local web interface to review jobs, filter by match score, and track application status (`new`, `applied`, `rejected`).
 - **Dashboard HTTP API**: Updates the application state dynamically from the web page.
@@ -49,12 +51,22 @@ Create a `.env` file in the root directory by copying the sample:
 ```bash
 cp .env.sample .env
 ```
-Open `.env` and fill in your credentials:
+Open `.env` and fill in your credentials. You can select either Google Gemini or Ollama as your evaluation provider:
+
 ```ini
 IMAP_SERVER=imap.gmail.com
 EMAIL_ADDRESS=your.email@gmail.com
 EMAIL_PASSWORD=your_gmail_app_password
+
+# Choose provider: 'gemini' (requires API key) or 'ollama' (requires local server)
+LLM_PROVIDER=ollama
+
+# Google Gemini Config
 GEMINI_API_KEY=your_gemini_api_key
+
+# Ollama Config
+OLLAMA_MODEL=gemma4:latest
+OLLAMA_URL=http://localhost:11434
 ```
 
 ### 4. Target Preferences
